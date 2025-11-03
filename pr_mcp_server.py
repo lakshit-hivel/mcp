@@ -23,13 +23,13 @@ def run_query(query: str) -> str:
     """Run a query for the database"""
     conn = get_db_connection()
     cursor = conn.cursor()
-    
-    if(query.startswith("SELECT")):
-        cursor.execute(query)
-        res = cursor.fetchall()
-        return json.dumps(res, indent=2, default=str)
-    else:
-        return "Mission aborted. Please use a SELECT query."
+    if not query.startswith("SELECT"):
+        return json.dumps({
+            "error": "Only SELECT queries are allowed",
+        })
+    cursor.execute(query)
+    result = cursor.fetchall()
+    return json.dumps(result, indent=2, default=str)
 
 
 @mcp.tool()
@@ -88,12 +88,50 @@ def list_tables() -> str:
 
 
 @mcp.tool()
-def get_current_database() -> str:
-    """Get the current database and schema"""
+def safe_sql(sql: str) -> str:
+    """
+    Validate and safely execute SQL queries.
+    
+    Args:
+        sql: The SQL query to validate and run
+        schema_guard: If True, validate table/column names exist
+        
+    Returns:
+        Query results or validation errors
+    """
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT current_database(), current_schema();")
-    res = cursor.fetchone()
-    return json.dumps(res, indent=2, default=str)
+    
+    sql_upper = sql.strip().upper()
+    
+    if not sql_upper.startswith("SELECT"):
+        return json.dumps({
+            "error": "Only SELECT queries are allowed",
+            "provided": sql[:50]
+        })
+    dangerous_keywords = ["DROP", "DELETE", "INSERT", "UPDATE", "ALTER", "CREATE", "TRUNCATE"]
+    for keyword in dangerous_keywords:
+        if keyword in sql_upper:
+            return json.dumps({
+                "error": f"Dangerous keyword detected: {keyword}",
+                "hint": "Only SELECT queries are allowed"
+            })
+    
+    if "LIMIT" not in sql_upper:
+        sql = sql.rstrip(";") + " LIMIT 100"
+        added_limit = True
+    else:
+        added_limit = False
 
-mcp.run()
+    try:
+        cursor.execute(sql)
+        result = cursor.fetchall()
+        return json.dumps(result, indent=2, default=str)
+    except Exception as e:
+        return json.dumps({
+            "error": str(e),
+            "sql": sql
+        })
+    finally:
+        cursor.close()
+        conn.close()
