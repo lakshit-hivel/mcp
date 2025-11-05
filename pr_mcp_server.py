@@ -1,6 +1,5 @@
 import json
 import os
-import re
 from mcp.server.fastmcp import FastMCP
 import psycopg2
 from dotenv import load_dotenv
@@ -213,41 +212,61 @@ def safe_sql(sql: str) -> str:
         conn.close()
 
 @mcp.tool()
-def handle_time_based_queries(query: str) -> str:
+def get_prs_by_time_range(
+    days: int | None = None,
+    weeks: int | None = None, 
+    months: int | None = None,
+) -> str:
     """
-    Handle the queries which involve any type of time or date based information.
-    eg: Give me the PRs which were merged in the last 30 days. (last 30 days is a time based information)
+    Get pull requests within a specified time range.
+    The LLM should extract time-based information from user queries and pass structured parameters.
+    
     Args:
-        query: The query to handle
+        days: Number of days to look back (e.g., 30 for "last 30 days")
+        weeks: Number of weeks to look back (e.g., 2 for "last 2 weeks")
+        months: Number of months to look back (e.g., 1 for "last month")
+    
     Returns:
-        The query results
+        JSON array of pull requests matching the time criteria
+    
     """
-
+    
     conn = get_db_connection()
     cursor = conn.cursor()
-
-    query = query.lower()
-    WHERE_DEF = ""
-
-    match = re.search(r'last\s+(\d+)\s+days?', query)
-    if match:
-        WHERE_DEF = f"createdon >= NOW() - INTERVAL '{match.group(1)} days'"
-    elif "last week" in query:
-        WHERE_DEF = f"createdon >= NOW() - INTERVAL '1 week'"
-    elif "last month" in query:
-        WHERE_DEF = f"createdon >= NOW() - INTERVAL '1 month'"
-    elif "today" in query:
-        WHERE_DEF = "createdon >= DATE_TRUNC('day', NOW())"
     
-    cursor.execute(
-        f"""
+    
+    # Build time filter based on provided parameters
+    time_filter = None
+    if days is not None:
+        if days == 0:
+            time_filter = f"createdon >= DATE_TRUNC('day', NOW())"
+        else:
+            time_filter = f"createdon >= NOW() - INTERVAL '{days} days'"
+    elif weeks is not None:
+        time_filter = f"createdon >= NOW() - INTERVAL '{weeks} weeks'"
+    elif months is not None:
+        time_filter = f"createdon >= NOW() - INTERVAL '{months} months'"
+    else:
+        return json.dumps({
+            "error": "Please provide at least one time parameter (days, weeks, or months)"
+        })
+    
+    query = f"""
         SELECT * 
         FROM insightly.pull_request 
-        WHERE {WHERE_DEF} AND organizationid = 2133
-        """
-    )
+        WHERE {time_filter} AND organizationid = 2133
+        ORDER BY createdon DESC
+        LIMIT 1000
+    """
+    
+
+    cursor.execute(query)
     res = cursor.fetchall()
-    return json.dumps(res, indent=2, default=str)
+    return json.dumps({
+        "count": len(res),
+        "results": res
+    }, indent=2, default=str)
+
 
 if __name__ == "__main__":
     mcp.run()
