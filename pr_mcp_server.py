@@ -85,6 +85,59 @@ def list_tables() -> str:
 
 
 @mcp.tool()
+def get_table_schema(table_name: str) -> str:
+    """
+    Get the schema (columns, data types, constraints) for a specific table.
+    
+    Args:
+        table_name: Name of the table (without schema prefix)
+        
+    Returns:
+        JSON with column information including names, types, and constraints
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+
+        # Get column information
+    query = """
+        SELECT 
+            column_name,
+            data_type,
+            character_maximum_length,
+            is_nullable,
+            column_default
+        FROM information_schema.columns
+        WHERE table_schema = 'insightly' 
+        AND table_name = %s
+        ORDER BY ordinal_position
+    """
+    
+    cursor.execute(query, (table_name,))
+    columns = cursor.fetchall()
+
+    # schema_info = {
+    #     "table": f"insightly.{table_name}",
+    #     "columns": []
+    # }
+    
+    # for col in columns:
+    #     col_info = {
+    #         "name": col[0],
+    #         "type": col[1],
+    #         "nullable": col[3] == "YES"
+    #     }
+    #     if col[2]:  # character_maximum_length
+    #         col_info["max_length"] = col[2]
+    #     if col[4]:  # column_default
+    #         col_info["default"] = col[4]
+        
+    #     schema_info["columns"].append(col_info)
+    
+    return json.dumps(columns, indent=2)
+
+
+@mcp.tool()
 def safe_sql(sql: str) -> str:
     """
     Validate and safely execute SQL queries.
@@ -125,10 +178,19 @@ def safe_sql(sql: str) -> str:
         result = cursor.fetchall()
         return json.dumps(result, indent=2, default=str)
     except Exception as e:
-        return json.dumps({
-            "error": str(e),
+        error_msg = str(e)
+        error_response = {
+            "error": error_msg,
             "sql": sql
-        })
+        }
+        
+        # Provide helpful hints based on error type
+        if "column" in error_msg.lower() and "does not exist" in error_msg.lower():
+            error_response["hint"] = "Use get_table_schema() to check available columns for the table"
+        elif "relation" in error_msg.lower() and "does not exist" in error_msg.lower():
+            error_response["hint"] = "Use list_tables() to see available tables"
+        
+        return json.dumps(error_response, indent=2)
     finally:
         cursor.close()
         conn.close()
