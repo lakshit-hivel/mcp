@@ -49,9 +49,6 @@ def get_pr_summary(pr_id: int) -> str:
 def list_tables() -> str:
     """
     List all tables in the insightly schema with their row counts.
-    
-    Returns:
-        JSON with list of tables and their row counts
     """
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -135,3 +132,6 @@ def safe_sql(sql: str) -> str:
     finally:
         cursor.close()
         conn.close()
+
+if __name__ == "__main__":
+    mcp.run()
