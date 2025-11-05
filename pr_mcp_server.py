@@ -115,26 +115,44 @@ def get_table_schema(table_name: str) -> str:
     
     cursor.execute(query, (table_name,))
     columns = cursor.fetchall()
-
-    # schema_info = {
-    #     "table": f"insightly.{table_name}",
-    #     "columns": []
-    # }
-    
-    # for col in columns:
-    #     col_info = {
-    #         "name": col[0],
-    #         "type": col[1],
-    #         "nullable": col[3] == "YES"
-    #     }
-    #     if col[2]:  # character_maximum_length
-    #         col_info["max_length"] = col[2]
-    #     if col[4]:  # column_default
-    #         col_info["default"] = col[4]
-        
-    #     schema_info["columns"].append(col_info)
-    
     return json.dumps(columns, indent=2)
+
+@mcp.tool()
+def get_metrics(pr_id: int | None = None) -> str:
+    """
+    Return PR metrics for the given PR id.
+    Args:
+        pr_id: PR ID If provided, fetch metrics for that PR only.
+        If not provided, returns all metrics.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    if pr_id:
+        cursor.execute(
+            f"""
+            SELECT cycletimeduration, opentoreviewduration, reviewedtomergedduration, committoopenduration
+            from insightly.pull_request 
+            where actualpullrequestid = {pr_id}
+            """
+        )
+        res = cursor.fetchone()
+        data = {
+            "Cycle Time": res[0],
+            "Review Time": res[1],
+            "Merge Time": res[2],
+            "Coding Time": res[3],
+        }
+
+        return json.dumps(data, indent=2)
+    else:
+        cursor.execute(
+            f"""
+            SELECT cycletimeduration, opentoreviewduration, reviewedtomergedduration, committoopenduration
+            from insightly.pull_request
+            """
+        )
+        res = cursor.fetchall()
+        return json.dumps(res, indent=2, default=str)
 
 
 @mcp.tool()
@@ -169,9 +187,6 @@ def safe_sql(sql: str) -> str:
     
     if "LIMIT" not in sql_upper:
         sql = sql.rstrip(";") + " LIMIT 100"
-        added_limit = True
-    else:
-        added_limit = False
 
     try:
         cursor.execute(sql)
