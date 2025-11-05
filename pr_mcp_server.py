@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from mcp.server.fastmcp import FastMCP
 import psycopg2
 from dotenv import load_dotenv
@@ -39,7 +40,7 @@ def get_pr_summary(pr_id: int) -> str:
     cursor = conn.cursor()
     cursor.execute(
         f"""
-        SELECT * from insightly.pull_request where id = {pr_id}
+        SELECT * from insightly.pull_request where actualpullrequestid = {pr_id}
         """
     )
     res = cursor.fetchall()
@@ -132,15 +133,15 @@ def get_metrics(pr_id: int | None = None) -> str:
             f"""
             SELECT cycletimeduration, opentoreviewduration, reviewedtomergedduration, committoopenduration
             from insightly.pull_request 
-            where actualpullrequestid = {pr_id}
+            where actualpullrequestid = {pr_id} AND organizationid = 2133
             """
         )
         res = cursor.fetchone()
         data = {
-            "Cycle Time": res[0],
-            "Review Time": res[1],
-            "Merge Time": res[2],
-            "Coding Time": res[3],
+            "Cycle Time": f"{res[0]} minutes" if res[0] is not None else "N/A",
+            "Review Time": f"{res[1]} minutes" if res[1] is not None else "N/A",
+            "Merge Time": f"{res[2]} minutes" if res[2] is not None else "N/A",
+            "Coding Time": f"{res[3]} minutes" if res[3] is not None else "N/A",
         }
 
         return json.dumps(data, indent=2)
@@ -149,6 +150,7 @@ def get_metrics(pr_id: int | None = None) -> str:
             f"""
             SELECT cycletimeduration, opentoreviewduration, reviewedtomergedduration, committoopenduration
             from insightly.pull_request
+            where organizationid = 2133
             """
         )
         res = cursor.fetchall()
@@ -209,6 +211,43 @@ def safe_sql(sql: str) -> str:
     finally:
         cursor.close()
         conn.close()
+
+@mcp.tool()
+def handle_time_based_queries(query: str) -> str:
+    """
+    Handle the queries which involve any type of time or date based information.
+    eg: Give me the PRs which were merged in the last 30 days. (last 30 days is a time based information)
+    Args:
+        query: The query to handle
+    Returns:
+        The query results
+    """
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    query = query.lower()
+    WHERE_DEF = ""
+
+    match = re.search(r'last\s+(\d+)\s+days?', query)
+    if match:
+        WHERE_DEF = f"createdon >= NOW() - INTERVAL '{match.group(1)} days'"
+    elif "last week" in query:
+        WHERE_DEF = f"createdon >= NOW() - INTERVAL '1 week'"
+    elif "last month" in query:
+        WHERE_DEF = f"createdon >= NOW() - INTERVAL '1 month'"
+    elif "today" in query:
+        WHERE_DEF = "createdon >= DATE_TRUNC('day', NOW())"
+    
+    cursor.execute(
+        f"""
+        SELECT * 
+        FROM insightly.pull_request 
+        WHERE {WHERE_DEF} AND organizationid = 2133
+        """
+    )
+    res = cursor.fetchall()
+    return json.dumps(res, indent=2, default=str)
 
 if __name__ == "__main__":
     mcp.run()
