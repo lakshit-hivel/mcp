@@ -83,6 +83,18 @@ def list_tables() -> str:
     
     return json.dumps(result, indent=2)
 
+@mcp.tool()
+def get_commit_table()->str:
+    """
+    For any query related to commits, use this tool to get the commit table from the database with all the columns.
+    Returns:
+        JSON array of commit data
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM insightly.commit")
+    res = cursor.fetchall()
+    return json.dumps(res, indent=2, default=str)
 
 @mcp.tool()
 def get_table_schema(table_name: str) -> str:
@@ -257,6 +269,60 @@ def get_prs_by_time_range(
         WHERE {time_filter} AND organizationid = 2133
         ORDER BY createdon DESC
         LIMIT 1000
+    """
+    
+
+    cursor.execute(query)
+    res = cursor.fetchall()
+    return json.dumps({
+        "count": len(res),
+        "results": res
+    }, indent=2, default=str)
+
+@mcp.tool()
+def get_commits_by_time_range(
+    days: int | None = None,
+    weeks: int | None = None, 
+    months: int | None = None,
+) -> str:
+    """
+    Get commits within a specified time range.
+    The LLM should extract time-based information from user queries and pass structured parameters.
+    
+    Args:
+        days: Number of days to look back (e.g., 30 for "last 30 days")
+        weeks: Number of weeks to look back (e.g., 2 for "last 2 weeks")
+        months: Number of months to look back (e.g., 1 for "last month")
+    
+    Returns:
+        JSON array of commits matching the time criteria
+    
+    """
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    
+    # Build time filter based on provided parameters
+    time_filter = None
+    if days is not None:
+        if days == 0:
+            time_filter = f"date >= DATE_TRUNC('day', NOW())"
+        else:
+            time_filter = f"date >= NOW() - INTERVAL '{days} days'"
+    elif weeks is not None:
+        time_filter = f"date >= NOW() - INTERVAL '{weeks} weeks'"   
+    elif months is not None:
+        time_filter = f"date >= NOW() - INTERVAL '{months} months'"
+    else:
+        return json.dumps({
+            "error": "Please provide at least one time parameter (days, weeks, or months)"
+        })
+    
+    query = f"""
+        SELECT COUNT(*)
+        FROM insightly.commit 
+        WHERE {time_filter} AND organizationid = 2133
     """
     
 

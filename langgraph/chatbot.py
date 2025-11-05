@@ -14,6 +14,9 @@ import asyncio
 from langchain_core.messages import SystemMessage
 from messages import BOT_SYSTEM_MESSAGE
 
+# Maximum number of messages to keep in history (excluding system message)
+MAX_MESSAGES = 10
+
 load_dotenv()
 
 server_params = StdioServerParameters(
@@ -57,6 +60,23 @@ llm_with_tools = None
 # state
 class chatState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
+    summary: str
+
+
+
+
+def create_summary(messages: list[BaseMessage]) -> str:
+    """Create a summary of the messages"""
+    conversation = "\n".join([
+        f"{'User' if isinstance(m, HumanMessage) else 'AI'}: {m.content[:200]}"
+        for m in messages 
+        if hasattr(m, 'content') and not isinstance(m, SystemMessage)
+    ])
+    prompt = f"Summarize this conversation in 2-3 sentences:\n{conversation}"
+    summary = llm.invoke([HumanMessage(content=prompt)])
+    return summary.content
+
+
 
 # Node functions
 def chat_node(state: chatState) -> chatState:
@@ -65,6 +85,17 @@ def chat_node(state: chatState) -> chatState:
     
     if not messages or not isinstance(messages[0], SystemMessage):
         messages = [system_message] + messages
+    
+    if len(messages) > MAX_MESSAGES + 1: 
+        old_messages = messages[1:-(MAX_MESSAGES-3)] 
+        recent_messages = messages[-(MAX_MESSAGES-3):]
+
+        summary = create_summary(old_messages)
+        summary_msg = SystemMessage(content=f"Previous conversation: {summary}")
+        messages = [messages[0], summary_msg] + recent_messages
+
+        state["summary"] = summary
+
     
     res = llm_with_tools.invoke(messages)
     return {"messages": [res]}
@@ -136,7 +167,7 @@ async def main():
     
     workflow = graph.compile(checkpointer=checkptr)
     
-    thread_id = '152'
+    thread_id = '6785'
     
     while True:
         user_inp = input("You: ")
