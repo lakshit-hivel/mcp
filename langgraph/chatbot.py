@@ -11,8 +11,8 @@ from langchain_mcp_adapters.tools import load_mcp_tools
 from langchain_core.messages import ToolMessage
 from typing import Annotated
 import asyncio
-from langgraph.messages import BOT_SYSTEM_MESSAGE
 from langchain_core.messages import SystemMessage
+from messages import BOT_SYSTEM_MESSAGE
 
 load_dotenv()
 
@@ -136,7 +136,7 @@ async def main():
     
     workflow = graph.compile(checkpointer=checkptr)
     
-    thread_id = '150'
+    thread_id = '152'
     
     while True:
         user_inp = input("You: ")
